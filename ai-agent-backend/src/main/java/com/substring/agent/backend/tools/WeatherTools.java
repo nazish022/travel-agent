@@ -8,7 +8,8 @@ import java.util.Map;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+
+import com.substring.agent.backend.config.ApiLogging;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -22,9 +23,7 @@ public class WeatherTools {
     private final RestClient openMeteo;
 
     public WeatherTools() {
-        JdkClientHttpRequestFactory http = new JdkClientHttpRequestFactory();
-        http.setReadTimeout(Duration.ofSeconds(30));
-        this.openMeteo = RestClient.builder().requestFactory(http).build();
+        this.openMeteo = ApiLogging.restClient(Duration.ofSeconds(30)).build();
     }
 
     // WMO weather codes used by Open-Meteo
@@ -47,7 +46,6 @@ public class WeatherTools {
             @ToolParam(description = "Longitude of the place, e.g. 73.83 for Goa") double longitude,
             @ToolParam(description = "First date as YYYY-MM-DD") String startDate,
             @ToolParam(required = false, description = "Last date as YYYY-MM-DD, defaults to startDate") String endDate) {
-        System.out.println("calling weather tool: " + placeName + " " + startDate + " to " + endDate);
         LocalDate start, end;
         try {
             start = LocalDate.parse(startDate);

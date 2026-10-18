@@ -1,9 +1,14 @@
 package com.substring.agent.backend.config;
 
 import org.springframework.ai.chat.client.ChatClient;
+import java.util.Arrays;
+
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -67,8 +72,16 @@ public class AiConfig {
 
             Only share links exactly as returned by the tools. Never make up or rewrite a link.
         """)
-        .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory()).build())
-        .defaultTools(tools, inventoryTools, flightTools, hotelTools, weatherTools)
+        // SimpleLoggerAdvisor logs the request to and response from the model at DEBUG (off by default, see application.yml)
+        .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory()).build(), new SimpleLoggerAdvisor())
+        .defaultToolCallbacks(loggedTools(tools, inventoryTools, flightTools, hotelTools, weatherTools))
         .build();
+    }
+
+    // Same as defaultTools(...), with each tool wrapped to log its arguments, result and duration
+    private static ToolCallback[] loggedTools(Object... toolObjects) {
+        return Arrays.stream(MethodToolCallbackProvider.builder().toolObjects(toolObjects).build().getToolCallbacks())
+                .map(LoggingToolCallback::new)
+                .toArray(ToolCallback[]::new);
     }
 }

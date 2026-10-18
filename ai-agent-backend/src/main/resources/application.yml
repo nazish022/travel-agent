@@ -13,3 +13,12 @@ spring:
             chat:
                 # model: ${CHAT_MODEL:gpt-4o-mini}
                 model: ${CHAT_MODEL:gemini-3.1-flash-lite}
+
+logging:
+    file:
+        name: logs/app.log          # also written to the console
+    level:
+        # INFO: one line per tool call and per API call. DEBUG adds full tool results and raw API response bodies.
+        com.substring.agent.backend: DEBUG
+        # Set to DEBUG to log every request to and response from the model (very verbose: includes the system prompt and tool list)
+        org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: INFO

@@ -45,29 +45,42 @@ ChatController ─► ChatService ─► ChatClient (Gemini via OpenAI-compatibl
 ## Project structure
 
 ```
-src/main/java/com/substring/agent/backend/
-├── ai_agent_backend/AiAgentBackendApplication.java   # entry point
-├── config/AiConfig.java          # ChatClient: system prompt, memory, tools
-├── controller/ChatController.java # POST /chat
-├── controller/PageController.java # GET / → chat page
-├── service/ChatService.java      # calls ChatClient with the conversation ID
-└── tools/
-    ├── FlightTools.java          # live: search, compare sites, flight status
-    ├── HotelTools.java           # live: search, compare sites
-    ├── WeatherTools.java         # live: daily forecast
-    ├── OrderTools.java           # dummy order data
-    └── InventoryTools.java       # dummy stock data
-src/main/resources/
-├── application.yml               # port 8081, model, loads .env
-└── templates/index.html          # chat UI
-../docs/prompt.md                  # test prompts with expected results and quota cost
-../.gitignore                      # root ignore rules (.env, .vscode, target)
+travel-agent/
+├── README.md
+├── .gitignore                         # .env, .vscode, target, logs
+├── docs/prompt.md                     # test prompts with expected results and quota cost
+└── ai-agent-backend/                  # Spring Boot app (run everything from here)
+    ├── .env.example                   # copy to .env and add your keys
+    ├── pom.xml
+    └── src/main/
+        ├── java/com/substring/agent/backend/
+        │   ├── ai_agent_backend/AiAgentBackendApplication.java   # entry point
+        │   ├── config/AiConfig.java              # ChatClient: system prompt, memory, tools
+        │   ├── config/ApiLogging.java            # RestClient for external APIs: timeout, call logging, key masking
+        │   ├── config/LoggingToolCallback.java   # logs each tool call, result and duration
+        │   ├── controller/ChatController.java    # POST /chat
+        │   ├── controller/PageController.java    # GET / → chat page
+        │   ├── service/ChatService.java          # calls ChatClient with the conversation ID
+        │   └── tools/
+        │       ├── FlightTools.java              # live: search, compare sites, flight status
+        │       ├── HotelTools.java               # live: search, compare sites
+        │       ├── WeatherTools.java             # live: daily forecast
+        │       ├── OrderTools.java               # dummy order data
+        │       └── InventoryTools.java           # dummy stock data
+        └── resources/
+            ├── application.yml                   # port 8081, model, logging, loads .env
+            └── templates/index.html              # chat UI
 ```
 
 ## Setup
 
 1. **Java 21** installed.
-2. Copy the example env file and fill in your keys (`.env` is git-ignored):
+2. Clone and go into the app folder; all commands below run from here:
+   ```bash
+   git clone https://github.com/nazish022/travel-agent.git
+   cd travel-agent/ai-agent-backend
+   ```
+3. Copy the example env file and fill in your keys (`.env` is git-ignored):
    ```bash
    cp .env.example .env
    ```
@@ -78,17 +91,33 @@ src/main/resources/
    | `AVIATIONSTACK_API_KEY` | https://aviationstack.com/signup/free | ~100 requests/month, HTTP only |
 
    Weather (Open-Meteo) needs no key. `CHAT_MODEL` picks the Gemini model (default `gemini-3.1-flash-lite`); change it in `.env` to try another model without touching code. Don't leave it empty.
-3. Run:
+4. Run (from `ai-agent-backend/`, since `.env` is read from the current folder):
    ```bash
    ./mvnw spring-boot:run
    ```
-   Run it from `ai-agent-backend/`: `.env` is read from the current folder.
-4. Open http://localhost:8081/
+5. Open http://localhost:8081/
+
+## Logging
+
+Logs go to the console and to `ai-agent-backend/logs/app.log` (git-ignored; Spring Boot rotates it at 10 MB).
+
+| What | Level | Example |
+|---|---|---|
+| Every tool call: arguments, duration, result (first 500 chars) | INFO | `Tool getWeather called with {"placeName":"Goa",...}` / `Tool getWeather returned in 890 ms, 155 chars: ...` |
+| Every external API call: URL with keys masked, status, time, size | INFO | `API GET https://serpapi.com/search.json?...&api_key=*** -> 200 in 3027 ms, 167708 bytes` |
+| Full tool result and raw API response body (first 5000 chars) | DEBUG | `API response body: {...}` |
+| Every request to and response from the model | DEBUG on `SimpleLoggerAdvisor` | off by default: very verbose |
+
+Set levels in `application.yml` under `logging.level`: `com.substring.agent.backend` (tools and APIs, DEBUG by default) and `org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor` (model traffic, INFO = off).
+
+Handy: `tail -f logs/app.log | grep -E "Tool |API "` shows just the tool and API lines as you chat.
+
+API keys are never logged: `ApiLogging.mask` replaces `api_key` / `access_key` values with `***` (covered by `ApiLoggingTest`).
 
 ## Testing
 
-- `./mvnw test`: one test that checks the app starts (`contextLoads`).
-- [`../docs/prompt.md`](../docs/prompt.md): prompts to try by hand, with the expected result and SerpApi cost of each.
+- `./mvnw test` (from `ai-agent-backend/`): checks the app starts (`contextLoads`) and that API keys are masked in logs (`ApiLoggingTest`).
+- [`docs/prompt.md`](docs/prompt.md): prompts to try by hand, with the expected result and SerpApi cost of each.
 
 ---
 
@@ -220,3 +249,7 @@ Note: the server's chat memory lives in memory, so after an app restart the agen
 - Chat page: Markdown (Marked + DOMPurify), suggestion buttons, New chat, history saved in the browser.
 - Added root `.gitignore` and `docs/prompt.md`.
 - Full project review against the course repo; open items added to the roadmap.
+
+### 2026-10-18
+- Logging: every tool call (args, result, duration) and API call (masked URL, status, time, body at DEBUG), written to console and `logs/app.log`. Optional model request/response logging. `ApiLoggingTest` for key masking.
+- `.env.example` added; `CHAT_MODEL` read from `.env`.

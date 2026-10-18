@@ -11,7 +11,8 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+
+import com.substring.agent.backend.config.ApiLogging;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -27,9 +28,7 @@ public class HotelTools {
     public HotelTools(@Value("${SERPAPI_API_KEY:}") String serpApiKey) {
         this.serpApiKey = serpApiKey;
         // Uncached SerpApi lookups can take well over the 10s default read timeout
-        JdkClientHttpRequestFactory http = new JdkClientHttpRequestFactory();
-        http.setReadTimeout(Duration.ofSeconds(60));
-        this.serpApi = RestClient.builder().baseUrl("https://serpapi.com").requestFactory(http).build();
+        this.serpApi = ApiLogging.restClient(Duration.ofSeconds(60)).baseUrl("https://serpapi.com").build();
     }
 
     private JsonNode googleHotels(String city, String checkIn, String checkOut, Integer adults, Map<String, Object> extra) {
@@ -57,8 +56,6 @@ public class HotelTools {
             @ToolParam(required = false, description = "Maximum price per night in INR") Integer maxPricePerNight,
             @ToolParam(required = false, description = "Sort by: price (default), rating or reviews") String sortBy,
             @ToolParam(required = false, description = "Minimum guest rating: 3.5, 4 or 4.5") Double minRating) {
-        System.out.println("calling search hotels tool: " + city + " " + checkInDate + " to " + checkOutDate
-                + " adults=" + adults + " max=" + maxPricePerNight + " sort=" + sortBy + " minRating=" + minRating);
         if (serpApiKey.isBlank()) return "SERPAPI_API_KEY is not configured";
         // SerpApi codes: sort_by 3 lowest price, 8 highest rating, 13 most reviewed; rating 7 = 3.5+, 8 = 4+, 9 = 4.5+
         Map<String, Object> extra = new HashMap<>();
@@ -102,7 +99,6 @@ public class HotelTools {
             @ToolParam(description = "Same check-out date used in searchHotels") String checkOutDate,
             @ToolParam(required = false, description = "Same number of adults used in searchHotels") Integer adults,
             @ToolParam(description = "Property token of the chosen hotel from searchHotels") String propertyToken) {
-        System.out.println("calling hotel booking options tool: " + city + " " + checkInDate + " to " + checkOutDate);
         if (serpApiKey.isBlank()) return "SERPAPI_API_KEY is not configured";
         try {
             JsonNode res = googleHotels(city, checkInDate, checkOutDate, adults, Map.of("property_token", propertyToken));

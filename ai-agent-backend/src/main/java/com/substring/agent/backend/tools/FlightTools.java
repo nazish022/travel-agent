@@ -11,7 +11,8 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+
+import com.substring.agent.backend.config.ApiLogging;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -33,10 +34,8 @@ public class FlightTools {
         this.serpApiKey = serpApiKey;
         this.aviationStackKey = aviationStackKey;
         // Uncached SerpApi lookups can take well over the 10s default read timeout
-        JdkClientHttpRequestFactory http = new JdkClientHttpRequestFactory();
-        http.setReadTimeout(Duration.ofSeconds(60));
-        this.serpApi = RestClient.builder().baseUrl("https://serpapi.com").requestFactory(http).build();
-        this.aviationStack = RestClient.builder().baseUrl("http://api.aviationstack.com/v1").requestFactory(http).build();
+        this.serpApi = ApiLogging.restClient(Duration.ofSeconds(60)).baseUrl("https://serpapi.com").build();
+        this.aviationStack = ApiLogging.restClient(Duration.ofSeconds(60)).baseUrl("http://api.aviationstack.com/v1").build();
     }
 
     private JsonNode googleFlights(String origin, String destination, String departureDate,
@@ -92,8 +91,6 @@ public class FlightTools {
             @ToolParam(required = false, description = "Earliest departure hour, 0-23") Integer departAfterHour,
             @ToolParam(required = false, description = "Latest departure hour, 0-23, inclusive") Integer departBeforeHour,
             @ToolParam(required = false, description = "true to show only nonstop flights") Boolean nonstopOnly) {
-        System.out.println("calling search flights tool: " + origin + " -> " + destination + " on " + departureDate
-                + " adults=" + adults + " class=" + cabinClass + " sort=" + sortBy + " hours=" + departAfterHour + "-" + departBeforeHour + " nonstop=" + nonstopOnly);
         if (serpApiKey.isBlank()) return "SERPAPI_API_KEY is not configured";
         try {
             JsonNode res = googleFlights(origin, destination, departureDate, adults, cabinClass, null);
@@ -151,7 +148,6 @@ public class FlightTools {
     //flight status
     @Tool(description = "Get the live status of a flight by its IATA flight number, e.g. AI101 or BA117")
     public String getFlightStatus(@ToolParam(description = "IATA flight number, e.g. BA117") String flightNumber) {
-        System.out.println("calling flight status tool: " + flightNumber);
         if (aviationStackKey.isBlank()) return "AVIATIONSTACK_API_KEY is not configured";
         try {
             JsonNode res = aviationStack.get()
@@ -189,7 +185,6 @@ public class FlightTools {
             @ToolParam(required = false, description = "Same number of adults used in searchFlights") Integer adults,
             @ToolParam(required = false, description = "Same cabin class used in searchFlights") String cabinClass,
             @ToolParam(description = "Booking token of the chosen option from searchFlights") String bookingToken) {
-        System.out.println("calling booking options tool: " + origin + " -> " + destination + " on " + departureDate + " adults=" + adults + " class=" + cabinClass + " tokenLen=" + (bookingToken == null ? 0 : bookingToken.length()));
         if (serpApiKey.isBlank()) return "SERPAPI_API_KEY is not configured";
         try {
             JsonNode res = googleFlights(origin, destination, departureDate, adults, cabinClass, bookingToken);
