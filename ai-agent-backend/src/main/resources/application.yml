@@ -1,0 +1,15 @@
+server:
+    port: 8081
+
+spring:
+    config:
+        import: optional:file:.env[.properties]
+    application:
+        name: ai-agent-backend
+    ai:
+        openai:
+            api-key: ${GEMINI_API_KEY}
+            base-url: https://generativelanguage.googleapis.com/v1beta/openai
+            chat:
+                # model: ${CHAT_MODEL:gpt-4o-mini}
+                model: ${CHAT_MODEL:gemini-3.1-flash-lite}

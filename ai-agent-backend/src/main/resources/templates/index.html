@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Travel Assistant</title>
+    <script>
+        // Set theme before paint to avoid a flash of the wrong theme
+        try {
+            const saved = localStorage.getItem('theme');
+            if (saved === 'dark' || (!saved && matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        } catch (e) {}
+    </script>
+    <script src="https://cdn.tailwindcss.com/3.4.17?plugins=typography"></script>
+    <script>tailwind.config = { darkMode: 'class' }</script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <style>
+        .dot { animation: blink 1.4s infinite both; }
+        .dot:nth-child(2) { animation-delay: .2s; }
+        .dot:nth-child(3) { animation-delay: .4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }
+    </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex items-center justify-center p-4 transition-colors">
+<div class="w-full max-w-3xl h-[90vh] flex flex-col rounded-2xl overflow-hidden shadow-xl bg-white dark:bg-slate-900 ring-1 ring-slate-200 dark:ring-slate-800">
+
+    <header class="flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-800">
+        <div class="w-9 h-9 rounded-full bg-indigo-600 text-white grid place-items-center font-semibold">AI</div>
+        <div class="flex-1">
+            <h1 class="font-semibold leading-tight">Travel Assistant</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Flights &middot; Hotels &middot; Weather &middot; Orders</p>
+        </div>
+        <button id="clear" type="button"
+                class="text-xs font-medium px-3 py-1.5 rounded-lg ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
+            New chat
+        </button>
+        <button id="theme" type="button" aria-label="Toggle dark mode"
+                class="w-9 h-9 rounded-full grid place-items-center hover:bg-slate-100 dark:hover:bg-slate-800 text-lg">
+            <span class="dark:hidden">🌙</span><span class="hidden dark:inline">☀️</span>
+        </button>
+    </header>
+
+    <main id="messages" class="flex-1 overflow-y-auto px-5 py-6 space-y-4" aria-live="polite"></main>
+
+    <template id="empty-template">
+        <div id="empty" class="h-full flex flex-col items-center justify-center text-center text-slate-500 dark:text-slate-400">
+            <p class="text-lg font-medium text-slate-700 dark:text-slate-200">Where are you headed?</p>
+            <p class="text-sm mt-1">Plan a trip, find cheap flights and hotels, or check the weather.</p>
+            <div class="grid sm:grid-cols-2 gap-2 mt-6 w-full max-w-xl text-left">
+                <button type="button" class="suggestion text-sm p-3 rounded-xl ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">Plan a trip from Mumbai to Goa for 2 adults next Friday to Sunday. Budget ₹40000 for flights + hotel.</button>
+                <button type="button" class="suggestion text-sm p-3 rounded-xl ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">Cheapest morning nonstop flight from Delhi to Mumbai tomorrow</button>
+                <button type="button" class="suggestion text-sm p-3 rounded-xl ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">Best rated hotels in Jaipur under ₹4000 a night for next weekend</button>
+                <button type="button" class="suggestion text-sm p-3 rounded-xl ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">What's the weather in Manali this weekend?</button>
+            </div>
+        </div>
+    </template>
+
+    <form id="chat-form" class="p-4 border-t border-slate-200 dark:border-slate-800">
+        <div class="flex items-end gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 ring-1 ring-transparent focus-within:ring-indigo-500">
+            <label for="input" class="sr-only">Message</label>
+            <textarea id="input" rows="1" required placeholder="Type your message..."
+                      class="flex-1 resize-none bg-transparent outline-none py-1.5 max-h-40 placeholder:text-slate-400"></textarea>
+            <button id="send" aria-label="Send"
+                    class="shrink-0 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 font-medium disabled:opacity-50">
+                Send
+            </button>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1.5 px-1">Enter to send &middot; Shift+Enter for a new line &middot; Trip plans can take a minute</p>
+    </form>
+</div>
+
+<!-- th:inline="none" keeps Thymeleaf from treating [[ or [( in the script as expressions -->
+<script th:inline="none">
+    const chatUrl = '/chat';
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+    const messages = document.getElementById('messages');
+
+    // Storage can be blocked (private mode, site data off); the chat still works, just without history
+    function load(key, fallback) {
+        try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; }
+    }
+    function save(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    }
+
+    // History and conversation ID survive page reloads. The server's memory is lost when the app restarts,
+    // so after a restart the agent won't remember messages still shown here.
+    let conversationId = load('conversationId', null) || crypto.randomUUID();
+    let history = load('history', []);
+    save('conversationId', conversationId);
+
+    // Links in replies open in a new tab
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+        if (node.tagName === 'A') {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
+        }
+    });
+
+    const styles = {
+        user: 'bg-indigo-600 text-white rounded-br-sm whitespace-pre-wrap',
+        bot: 'bg-slate-100 dark:bg-slate-800 rounded-bl-sm prose prose-sm dark:prose-invert max-w-none prose-a:text-indigo-600 dark:prose-a:text-indigo-400 prose-table:my-2',
+        error: 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-900'
+    };
+
+    function addMessage(text, who) {
+        document.getElementById('empty')?.remove();
+        const row = document.createElement('div');
+        row.className = 'flex ' + (who === 'user' ? 'justify-end' : 'justify-start');
+        const bubble = document.createElement('div');
+        bubble.className = 'max-w-[85%] px-4 py-2.5 rounded-2xl break-words leading-relaxed overflow-x-auto ' + styles[who];
+        // Bot replies are Markdown; sanitized so content from APIs (hotel names etc.) can't inject HTML
+        if (who === 'bot') bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+        else bubble.textContent = text;
+        row.appendChild(bubble);
+        messages.appendChild(row);
+        messages.scrollTop = messages.scrollHeight;
+        return bubble;
+    }
+
+    function showEmpty() {
+        messages.replaceChildren(document.getElementById('empty-template').content.cloneNode(true));
+        document.querySelectorAll('.suggestion').forEach(btn => btn.addEventListener('click', () => {
+            input.value = btn.textContent;
+            form.requestSubmit();
+        }));
+    }
+
+    if (history.length) history.forEach(m => addMessage(m.text, m.who));
+    else showEmpty();
+
+    document.getElementById('clear').addEventListener('click', () => {
+        if (send.disabled) return;
+        history = [];
+        conversationId = crypto.randomUUID();
+        save('history', history);
+        save('conversationId', conversationId);
+        showEmpty();
+        input.focus();
+    });
+
+    document.getElementById('theme').addEventListener('click', () => {
+        const dark = document.documentElement.classList.toggle('dark');
+        try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch (e) {}
+    });
+
+    function resize() {
+        input.style.height = 'auto';
+        input.style.height = input.scrollHeight + 'px';
+    }
+    input.addEventListener('input', resize);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            form.requestSubmit();
+        }
+    });
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text || send.disabled) return;
+        addMessage(text, 'user');
+        history.push({ who: 'user', text });
+        save('history', history);
+        input.value = '';
+        resize();
+        send.disabled = true;
+        const pending = document.createElement('div');
+        pending.className = 'flex justify-start';
+        pending.innerHTML = '<div class="px-4 py-2.5 rounded-2xl rounded-bl-sm bg-slate-100 dark:bg-slate-800">'
+            + '<span class="dot">●</span> <span class="dot">●</span> <span class="dot">●</span></div>';
+        messages.appendChild(pending);
+        messages.scrollTop = messages.scrollHeight;
+        try {
+            const res = await fetch(chatUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain', 'Conversation-Id': conversationId },
+                body: text
+            });
+            if (!res.ok) throw new Error('Server error ' + res.status);
+            const reply = await res.text();
+            pending.remove();
+            addMessage(reply, 'bot');
+            history.push({ who: 'bot', text: reply });
+            save('history', history);
+        } catch (err) {
+            pending.remove();
+            addMessage(err.message, 'error');
+        } finally {
+            send.disabled = false;
+            input.focus();
+        }
+    });
+</script>
+</body>
+</html>
